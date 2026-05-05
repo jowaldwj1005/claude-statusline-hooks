@@ -1,13 +1,13 @@
 ﻿# Claude Code Windows Setup - Bootstrap (v2)
 #
 # Online one-liner:
-#   iwr https://raw.githubusercontent.com/jowaldwj1005/claude-code-windows-setup/main/install.ps1 | iex
+#   iwr https://raw.githubusercontent.com/jowaldwj1005/claude-statusline-hooks/main/install.ps1 | iex
 #
 # Local clone:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
 
 param(
-    [string]$Repo   = 'jowaldwj1005/claude-code-windows-setup',
+    [string]$Repo   = 'jowaldwj1005/claude-statusline-hooks',
     [string]$Branch = 'main'
 )
 

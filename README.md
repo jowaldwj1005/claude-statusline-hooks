@@ -1,4 +1,4 @@
-# claude-code-windows-setup
+# claude-statusline-hooks
 
 Persönliche Claude-Code-Konfiguration für Windows: Statusline mit Git/Token-Infos + smarte, customizable Notifications.
 
@@ -35,14 +35,14 @@ main *3 ↑1 | Claude Opus 4.7 (1M context) | ctx: 280k/1M (28%) | cache: 87%
 ### One-Liner
 
 ```powershell
-iwr https://raw.githubusercontent.com/jowaldwj1005/claude-code-windows-setup/main/install.ps1 | iex
+iwr https://raw.githubusercontent.com/jowaldwj1005/claude-statusline-hooks/main/install.ps1 | iex
 ```
 
 ### Lokaler Clone
 
 ```powershell
-git clone https://github.com/jowaldwj1005/claude-code-windows-setup.git
-cd claude-code-windows-setup
+git clone https://github.com/jowaldwj1005/claude-statusline-hooks.git
+cd claude-statusline-hooks
 powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
 ```
 
