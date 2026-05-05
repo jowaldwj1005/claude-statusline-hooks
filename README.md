@@ -1,23 +1,38 @@
 # claude-code-windows-setup
 
-Persönliche Claude-Code-Konfiguration für Windows: Statusline mit Kontextfenster-Auslastung + Stop-Hook mit Toast-Notification.
+Persönliche Claude-Code-Konfiguration für Windows: Statusline mit Git/Token-Infos + smarte, customizable Notifications.
 
-## Was ist drin?
+## Features
 
-- **`statusline.ps1`** — Statusline unten im Terminal mit `<branch> | <model> | ctx: <used>/<limit> (<pct>%)`. Erkennt automatisch das 1M-Kontextfenster bei Opus-Varianten.
-- **`hooks/notify-on-stop.ps1`** — Stop-Hook, der eine Windows-Toast-Notification + Sound feuert, wenn Claude eine Antwort fertig hat. Praktisch wenn man nebenher arbeitet.
-- **`install.ps1`** — Bootstrap, der beides nach `~/.claude` kopiert und `settings.json` patcht (merget, ohne Bestehendes zu überschreiben).
+### Statusline
+
+```
+main *3 ↑1 | Claude Opus 4.7 (1M context) | ctx: 280k/1M (28%) | cache: 87%
+```
+
+- **Branch + dirty count** — `*3` = 3 uncommitted Files
+- **Ahead/behind** — `↑1 ↓2` vs upstream
+- **Modell-Name + Kontextfenster** — erkennt 1M-Varianten automatisch
+- **Cache-Hit-Rate** — sichtbar wenn Cache spürbar genutzt wird (>1k Tokens)
+
+### Smarte Notifications
+
+- **Hook-basiert** — feuert auf `Stop`, `Notification` (Permission-Prompts!), optional `SubagentStop`
+- **Foreground-Aware** — keine Toasts wenn dein Terminal/Editor im Vordergrund ist (löst das "Toast kommt obwohl ich vor dem Fenster sitze"-Problem)
+- **Min-Duration-Filter** — `Stop`-Toast nur wenn die Antwort > N Sekunden gedauert hat (default 10s)
+- **Pro-Event-Konfig** — Title, Sound, On/Off pro Event
+- **Slash-Command** — `/notify` zum Live-Toggeln, ohne Restart
 
 ## Voraussetzungen
 
 - Windows 10/11
-- Claude Code CLI installiert
-- PowerShell 5.1+ (kommt mit Windows)
-- Keine externen Module nötig — Toasts laufen über die Windows-WinRT-API mit Fallback auf System-Tray-Balloon
+- Claude Code CLI
+- PowerShell 5.1+ (mit Windows ausgeliefert)
+- Keine externen Module — Toasts via WinRT-API mit System-Tray-Balloon-Fallback
 
 ## Installation
 
-### One-Liner (empfohlen)
+### One-Liner
 
 ```powershell
 iwr https://raw.githubusercontent.com/jowaldwj1005/claude-code-windows-setup/main/install.ps1 | iex
@@ -31,25 +46,58 @@ cd claude-code-windows-setup
 powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Danach Claude Code einmal beenden und neu starten (`/exit`), damit Statusline und Hook geladen werden.
+Danach Claude Code beenden und neu starten.
 
-## Was macht `install.ps1`?
+## Slash-Command `/notify`
 
-1. Legt `~/.claude/` und `~/.claude/hooks/` an (falls nicht vorhanden)
-2. Lädt die beiden PS1-Skripte (lokal kopieren oder von GitHub Raw)
-3. Patcht `~/.claude/settings.json`:
-   - Setzt/ersetzt den `statusLine`-Block
-   - Hängt unseren Stop-Hook an `hooks.Stop` an (überschreibt keine anderen Hooks)
-4. Bestehende `permissions`, `enabledPlugins` etc. bleiben unangetastet
+Live-Steuerung der Notifications, ohne `settings.json` zu editieren:
 
-## Statusline anpassen
+| Befehl | Wirkung |
+|---|---|
+| `/notify status` | Aktuelle Konfiguration anzeigen |
+| `/notify on` | Notifications global einschalten |
+| `/notify off` | Notifications global ausschalten |
+| `/notify focus on` | Foreground-Window-Detection einschalten (default) |
+| `/notify focus off` | Toasts auch wenn Fenster aktiv ist |
+| `/notify event Stop off` | Nur das `Stop`-Event ausschalten |
+| `/notify event Notification on` | Permission-Prompt-Toasts einschalten |
+| `/notify event SubagentStop on` | Subagent-Fertig-Toasts aktivieren |
 
-Format ändern? Direkt `~/.claude/statusline.ps1` editieren — die JSON-Felder die Claude Code liefert sind dokumentiert unter <https://code.claude.com/docs/en/statusline>.
+## Konfiguration
 
-## Notification anpassen
+Default-Config landet bei der Erstinstallation unter `~/.claude/notify-config.json`:
 
-Im `notify-on-stop.ps1` kannst du `$message`, den Sound (`SystemSounds.Asterisk`) oder die Anzeigedauer (`ShowBalloonTip(4000)`) ändern.
+```json
+{
+  "enabled": true,
+  "skip_when_terminal_focused": true,
+  "events": {
+    "Stop":         { "enabled": true, "min_duration_sec": 10, "title": "Claude fertig",       "sound": "Asterisk" },
+    "Notification": { "enabled": true,                          "title": "Claude wartet auf dich", "sound": "Exclamation" },
+    "SubagentStop": { "enabled": false,                         "title": "Subagent fertig",   "sound": "Asterisk" }
+  }
+}
+```
+
+Bei späteren `install.ps1`-Läufen wird diese Datei nicht überschrieben.
+
+## Architektur
+
+```
+~/.claude/
+├── settings.json              ← gepatched: statusLine + 3 hook-events
+├── statusline.ps1             ← Statusline-Renderer
+├── notify-config.json         ← Notification-Verhalten (vom User editierbar)
+├── hooks/
+│   └── notify.ps1             ← Hook-Dispatcher (Event-typ via -Event Param)
+├── lib/
+│   └── notify-toggle.ps1      ← Wird von /notify aufgerufen
+└── commands/
+    └── notify.md              ← Slash-Command-Definition
+```
+
+Ein Dispatcher-Skript für alle Events, weil sich Logik wie Foreground-Detection und Config-Lookup sonst dreimal duplizieren würde.
 
 ## Lizenz
 
-MIT — nutze, forke, passe an.
+MIT

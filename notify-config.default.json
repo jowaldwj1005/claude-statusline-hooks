@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "skip_when_terminal_focused": true,
+  "disabled_sessions": [],
+  "events": {
+    "Stop": {
+      "enabled": true,
+      "min_duration_sec": 10,
+      "title": "Claude fertig",
+      "sound": "Asterisk"
+    },
+    "Notification": {
+      "enabled": true,
+      "title": "Claude wartet auf dich",
+      "sound": "Exclamation"
+    },
+    "SubagentStop": {
+      "enabled": false,
+      "title": "Subagent fertig",
+      "sound": "Asterisk"
+    }
+  }
+}

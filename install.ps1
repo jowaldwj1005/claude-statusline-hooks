@@ -1,10 +1,9 @@
-# Claude Code Windows Setup — Bootstrap
-# Installs the statusline + Stop-notification hook into ~/.claude on this machine.
+﻿# Claude Code Windows Setup - Bootstrap (v2)
 #
-# Usage (online one-liner):
+# Online one-liner:
 #   iwr https://raw.githubusercontent.com/jowaldwj1005/claude-code-windows-setup/main/install.ps1 | iex
 #
-# Usage (local clone):
+# Local clone:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
 
 param(
@@ -14,16 +13,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$claudeDir = Join-Path $env:USERPROFILE '.claude'
-$hooksDir  = Join-Path $claudeDir 'hooks'
-$settings  = Join-Path $claudeDir 'settings.json'
-$statusPs1 = Join-Path $claudeDir 'statusline.ps1'
-$notifyPs1 = Join-Path $hooksDir  'notify-on-stop.ps1'
+$claudeDir   = Join-Path $env:USERPROFILE '.claude'
+$hooksDir    = Join-Path $claudeDir 'hooks'
+$libDir      = Join-Path $claudeDir 'lib'
+$cmdDir      = Join-Path $claudeDir 'commands'
+$settings    = Join-Path $claudeDir 'settings.json'
+$notifyCfg   = Join-Path $claudeDir 'notify-config.json'
 
-Write-Host "→ Target: $claudeDir" -ForegroundColor Cyan
-New-Item -ItemType Directory -Force -Path $claudeDir, $hooksDir | Out-Null
+$statusPs1   = Join-Path $claudeDir 'statusline.ps1'
+$notifyPs1   = Join-Path $hooksDir  'notify.ps1'
+$togglePs1   = Join-Path $libDir    'notify-toggle.ps1'
+$cmdMd       = Join-Path $cmdDir    'notify.md'
 
-# --- 1. Fetch script files ---
+Write-Host "-> Target: $claudeDir" -ForegroundColor Cyan
+New-Item -ItemType Directory -Force -Path $claudeDir, $hooksDir, $libDir, $cmdDir | Out-Null
+
+# --- 1. Fetch files ---
 $scriptRoot = $PSScriptRoot
 $srcLocal = $scriptRoot -and (Test-Path (Join-Path $scriptRoot 'statusline.ps1'))
 
@@ -38,64 +43,81 @@ function Get-File($relative, $dest) {
     }
 }
 
-Write-Host "→ Installing scripts..." -ForegroundColor Cyan
+Write-Host "-> Installing scripts..." -ForegroundColor Cyan
 Get-File 'statusline.ps1'             $statusPs1
-Get-File 'hooks/notify-on-stop.ps1'   $notifyPs1
+Get-File 'hooks/notify.ps1'           $notifyPs1
+Get-File 'lib/notify-toggle.ps1'      $togglePs1
+Get-File 'commands/notify.md'         $cmdMd
 
-# --- 2. Patch settings.json (merge, never clobber) ---
-Write-Host "→ Patching settings.json..." -ForegroundColor Cyan
+# Default notify-config.json - only on first install (don't clobber user changes)
+if (-not (Test-Path $notifyCfg)) {
+    Get-File 'notify-config.default.json' $notifyCfg
+} else {
+    Write-Host "  kept existing notify-config.json" -ForegroundColor DarkGray
+}
+
+# Cleanup: remove obsolete v1 file if present
+$obsolete = Join-Path $hooksDir 'notify-on-stop.ps1'
+if (Test-Path $obsolete) {
+    Remove-Item -Force $obsolete
+    Write-Host "  removed obsolete notify-on-stop.ps1" -ForegroundColor DarkGray
+}
+
+# --- 2. Patch settings.json ---
+Write-Host "-> Patching settings.json..." -ForegroundColor Cyan
 
 if (Test-Path $settings) {
-    $json = Get-Content -Raw -LiteralPath $settings
-    $cfg  = $json | ConvertFrom-Json
+    $cfg = Get-Content -Raw -LiteralPath $settings | ConvertFrom-Json
 } else {
     $cfg = New-Object PSObject
 }
 
-$statusLineCmd = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $statusPs1 + '"'
-$notifyCmd     = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $notifyPs1 + '"'
+$ps = 'powershell -NoProfile -ExecutionPolicy Bypass -File'
+$statusLineCmd      = "$ps `"$statusPs1`""
+$notifyStopCmd      = "$ps `"$notifyPs1`" -Event Stop"
+$notifyNotifyCmd    = "$ps `"$notifyPs1`" -Event Notification"
+$notifySubagentCmd  = "$ps `"$notifyPs1`" -Event SubagentStop"
 
-# statusLine — replace wholesale
+# statusLine - replace wholesale
 $cfg | Add-Member -MemberType NoteProperty -Name 'statusLine' -Force -Value ([PSCustomObject]@{
     type    = 'command'
     command = $statusLineCmd
 })
 
-# hooks.Stop — append our hook if not already present, preserve other hook events
+# hooks - preserve other event types, replace ours where ours points at notify.ps1
 $hooks = $cfg.hooks
 if (-not $hooks) { $hooks = New-Object PSObject }
 
-$stopHook = [PSCustomObject]@{
-    matcher = ''
-    hooks   = @(
-        [PSCustomObject]@{ type = 'command'; command = $notifyCmd }
-    )
-}
-
-$existingStop = $hooks.Stop
-$hasOurs = $false
-if ($existingStop) {
-    foreach ($entry in $existingStop) {
-        foreach ($h in @($entry.hooks)) {
-            if ($h.command -like '*notify-on-stop.ps1*') { $hasOurs = $true }
+function Set-OurHook($eventName, $command) {
+    $existing = $hooks.$eventName
+    $newEntries = @()
+    if ($existing) {
+        foreach ($entry in @($existing)) {
+            $isOurs = $false
+            foreach ($h in @($entry.hooks)) {
+                if ($h.command -match 'notify(-on-stop)?\.ps1') { $isOurs = $true }
+            }
+            if (-not $isOurs) { $newEntries += $entry }
         }
     }
+    $newEntries += [PSCustomObject]@{
+        matcher = ''
+        hooks   = @([PSCustomObject]@{ type = 'command'; command = $command })
+    }
+    $hooks | Add-Member -MemberType NoteProperty -Name $eventName -Force -Value $newEntries
 }
 
-if ($hasOurs) {
-    Write-Host '  Stop hook already present — skipping' -ForegroundColor DarkGray
-} else {
-    $newStop = @()
-    if ($existingStop) { $newStop = @($existingStop) }
-    $newStop += $stopHook
-    $hooks | Add-Member -MemberType NoteProperty -Name 'Stop' -Force -Value $newStop
-}
+Set-OurHook 'Stop'         $notifyStopCmd
+Set-OurHook 'Notification' $notifyNotifyCmd
+Set-OurHook 'SubagentStop' $notifySubagentCmd
+
 $cfg | Add-Member -MemberType NoteProperty -Name 'hooks' -Force -Value $hooks
 
 # --- 3. Write back ---
-$out = $cfg | ConvertTo-Json -Depth 100
-Set-Content -LiteralPath $settings -Value $out -Encoding UTF8
+$cfg | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $settings -Encoding UTF8
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
-Write-Host "Restart Claude Code to pick up the new statusline and hook." -ForegroundColor Yellow
+Write-Host "Restart Claude Code to pick up the new statusline + hooks." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Use /notify to toggle: /notify on|off|status|focus on|off|event Stop on|off" -ForegroundColor Cyan
